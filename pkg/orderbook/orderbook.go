@@ -1,5 +1,7 @@
 package orderbook
 
+import "fmt"
+
 type OrderType int
 
 const (
@@ -63,3 +65,20 @@ type Order struct {
 func (o *Order) New() Order {
 	return Order{}
 }
+
+func (o *Order) GetFilledQuantity() Quantity {
+	return o.intialQuantiy - o.remainingQuantity
+}
+
+func (o *Order) Fill(quantity Quantity) error {
+	if quantity > o.remainingQuantity {
+		return fmt.Errorf(
+			"Order %d cannot be filled for more than it's remaining quantity",
+			o.orderId,
+		)
+	}
+	o.remainingQuantity -= quantity
+	return nil
+}
+
+type Orders []*Order
