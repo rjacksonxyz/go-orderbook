@@ -1,6 +1,9 @@
 package orderbook
 
-import "fmt"
+import (
+	"container/list"
+	"fmt"
+)
 
 type OrderType int
 
@@ -58,16 +61,49 @@ type Order struct {
 	orderId           OrderId
 	side              Side
 	price             Price
-	intialQuantiy     Quantity
+	intialQuantity    Quantity
 	remainingQuantity Quantity
 }
 
-func (o *Order) New() Order {
-	return Order{}
+func (o *Order) New(
+	orderType OrderType,
+	orderId OrderId,
+	side Side,
+	price Price,
+	quantity Quantity,
+) Order {
+	return Order{
+		orderType:         orderType,
+		orderId:           orderId,
+		side:              side,
+		price:             price,
+		intialQuantity:    quantity,
+		remainingQuantity: quantity,
+	}
 }
 
-func (o *Order) GetFilledQuantity() Quantity {
-	return o.intialQuantiy - o.remainingQuantity
+func (o *Order) OrderId() OrderId {
+	return o.orderId
+}
+
+func (o *Order) OrderType() OrderType {
+	return o.orderType
+}
+
+func (o *Order) Side() Side {
+	return o.side
+}
+
+func (o *Order) Price() Price {
+	return o.price
+}
+
+func (o *Order) InitialQuantity() Quantity {
+	return o.intialQuantity
+}
+
+func (o *Order) FilledQuantity() Quantity {
+	return o.intialQuantity - o.remainingQuantity
 }
 
 func (o *Order) Fill(quantity Quantity) error {
@@ -82,3 +118,86 @@ func (o *Order) Fill(quantity Quantity) error {
 }
 
 type Orders []*Order
+
+type OrderModify struct {
+	orderId  OrderId
+	side     Side
+	price    Price
+	quantity Quantity
+}
+
+func (o *OrderModify) New(
+	orderId OrderId,
+	price Price,
+	side Side,
+	quantity Quantity,
+) OrderModify {
+	return OrderModify{
+		price:    price,
+		side:     side,
+		orderId:  orderId,
+		quantity: quantity,
+	}
+}
+
+func (o *OrderModify) OrderId() OrderId {
+	return o.orderId
+}
+
+func (o *OrderModify) Side() Side {
+	return o.side
+}
+
+func (o *OrderModify) Price() Price {
+	return o.price
+}
+
+func (o *OrderModify) Quantity() Quantity {
+	return o.quantity
+}
+
+func (o *OrderModify) ToOrder(orderType OrderType) *Order {
+	return &Order{
+		orderType:         orderType,
+		orderId:           o.orderId,
+		side:              o.side,
+		price:             o.price,
+		intialQuantity:    o.quantity,
+		remainingQuantity: o.quantity,
+	}
+}
+
+type TradeInfo struct {
+	orderId  OrderId
+	price    Price
+	quantity Quantity
+}
+
+// A Trade represents a matching bid and ask.
+type Trade struct {
+	bidTrade TradeInfo
+	askTrade TradeInfo
+}
+
+func (t *Trade) New(
+	bidTrade, askTrade TradeInfo,
+) Trade {
+	return Trade{
+		bidTrade: bidTrade,
+		askTrade: askTrade,
+	}
+}
+
+type Trades []Trade
+
+type OrderEntry struct {
+	order    *Order
+	location int
+}
+
+type Orderbook struct{}
+
+type Alias *list.Element
+
+//
+//
