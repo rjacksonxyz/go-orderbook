@@ -327,9 +327,30 @@ func (m *Map[K, V]) fixDelete(node, parent *Node[K, V]) {
 	}
 }
 
+// First returns the first (smallest) key-value pair in the map
+func (m *Map[K, V]) First() (K, V, bool) {
+	if m.root == nil {
+		var zeroK K
+		var zeroV V
+		return zeroK, zeroV, false
+	}
+
+	// Find the leftmost node (smallest key)
+	current := m.root
+	for current.left != nil {
+		current = current.left
+	}
+	return current.Key, current.Value, true
+}
+
 // Size returns the number of elements in the map
 func (m *Map[K, V]) Size() int {
 	return m.size
+}
+
+// Empty return a boolean indicating if the map is empty
+func (m *Map[K, V]) Empty() bool {
+	return m.size == 0
 }
 
 // Clear removes all elements from the map

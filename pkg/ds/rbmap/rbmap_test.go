@@ -30,4 +30,8 @@ func TestMap(t *testing.T) {
 		assert.Equal(t, it.Key(), int(expecetdOrder[i]))
 		i++
 	}
+
+	// Assert that the first element key is	3
+	it := intMap.Begin()
+	assert.Equal(t, it.Key(), 3)
 }

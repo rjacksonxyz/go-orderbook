@@ -1,8 +1,8 @@
 package orderbook
 
 import (
-	"container/list"
 	"fmt"
+	"go-orderbook/pkg/ds/rbmap"
 )
 
 type OrderType int
@@ -195,9 +195,45 @@ type OrderEntry struct {
 	location int
 }
 
-type Orderbook struct{}
+type Orderbook struct {
+	bids   *rbmap.Map[Price, Orders]
+	asks   *rbmap.Map[Price, Orders]
+	orders map[OrderId]OrderEntry
+}
 
-type Alias *list.Element
+func (o *Orderbook) New() Orderbook {
+	return Orderbook{
+		bids: rbmap.NewMap[Price, Orders](func(a, b Price) bool {
+			return a < b
+		}),
+		asks: rbmap.NewMap[Price, Orders](func(a, b Price) bool {
+			return a > b
+		}),
+		orders: make(map[OrderId]OrderEntry),
+	}
+}
+
+func (o *Orderbook) CanMatch(
+	side Side,
+	price Price,
+) bool {
+	if side == Buy {
+		if o.asks.Empty() {
+			return false
+		}
+		asks := o.asks.Begin()
+		bestAsk := asks.Key()
+
+		return price >= bestAsk
+	} else {
+		if o.bids.Empty() {
+			return false
+		}
+		bids := o.bids.Begin()
+		bestBid := bids.Key()
+		return price <= bestBid
+	}
+}
 
 //
 //
