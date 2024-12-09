@@ -213,6 +213,7 @@ func (o *Orderbook) New() Orderbook {
 	}
 }
 
+// CanMatch checks if a given order can be matched at a given price.
 func (o *Orderbook) CanMatch(
 	side Side,
 	price Price,
