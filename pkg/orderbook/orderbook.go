@@ -117,7 +117,7 @@ func (o *Order) Fill(quantity Quantity) error {
 	return nil
 }
 
-type Orders []*Order
+type Orders []Order
 
 type OrderModify struct {
 	orderId  OrderId
@@ -234,5 +234,35 @@ func (o *Orderbook) CanMatch(
 
 func (o *Orderbook) Match() Trades {
 	var trades Trades
+
+	for {
+
+		// check for empty bids or asks
+		if o.bids.Empty() || o.asks.Empty() {
+			break
+		}
+
+		// retrieve the best bid and ask
+		bidIt := o.bids.Begin()
+		bidPrice, bids := bidIt.Key(), bidIt.Value()
+
+		askIt := o.asks.Begin()
+		askPrice, asks := askIt.Key(), askIt.Value()
+
+		if bidPrice < askPrice {
+			break
+		}
+
+		for len(bids) > 0 && len(asks) > 0 {
+			// TODO: Implement an iterator for orders, since usign a linked list
+			// will be more efficient than using a slice.
+
+			// TODO: Determine if a statically sized array is better leveraged
+			// than a linked list in this case.
+
+			// TODO: Implement the rest of the match logic
+		}
+
+	}
 	return trades
 }
