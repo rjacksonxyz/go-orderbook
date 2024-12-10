@@ -8,9 +8,7 @@ import (
 
 func TestMap(t *testing.T) {
 	// Create a new map with integers as keys and strings as values
-	intMap := NewMap[int, string](func(a, b int) bool {
-		return a < b
-	})
+	intMap := NewMap[int, string](Ascending[int])
 
 	// Insert some values
 	intMap.Insert(5, "five")

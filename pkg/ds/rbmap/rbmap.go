@@ -1,5 +1,7 @@
 package rbmap
 
+import "cmp"
+
 // Color represents the color of a Red-Black tree node
 type Color bool
 
@@ -8,8 +10,13 @@ const (
 	Red   Color = false
 )
 
+type Sortable interface {
+	comparable
+	cmp.Ordered
+}
+
 // Node represents a node in the Red-Black tree
-type Node[K comparable, V any] struct {
+type Node[K Sortable, V any] struct {
 	Key    K
 	Value  V
 	color  Color
@@ -19,17 +26,27 @@ type Node[K comparable, V any] struct {
 }
 
 // Map implements an ordered map using a Red-Black tree
-type Map[K comparable, V any] struct {
+type Map[K Sortable, V any] struct {
 	root *Node[K, V]
 	size int
 	less func(a, b K) bool // Custom comparison function
 }
 
 // NewMap creates a new map with a custom comparison function
-func NewMap[K comparable, V any](less func(a, b K) bool) *Map[K, V] {
+func NewMap[K cmp.Ordered, V any](less SortFunc[K]) *Map[K, V] {
 	return &Map[K, V]{
 		less: less,
 	}
+}
+
+type SortFunc[K Sortable] func(a, b K) bool
+
+func Ascending[K Sortable](a, b K) bool {
+	return a < b
+}
+
+func Descending[K Sortable](a, b K) bool {
+	return a > b
 }
 
 // rotateLeft performs a left rotation around the given node
@@ -360,7 +377,7 @@ func (m *Map[K, V]) Clear() {
 }
 
 // Iterator provides in-order traversal of the map
-type Iterator[K comparable, V any] struct {
+type Iterator[K Sortable, V any] struct {
 	current *Node[K, V]
 }
 

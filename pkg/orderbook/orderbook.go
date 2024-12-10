@@ -203,12 +203,8 @@ type Orderbook struct {
 
 func (o *Orderbook) New() Orderbook {
 	return Orderbook{
-		bids: rbmap.NewMap[Price, Orders](func(a, b Price) bool {
-			return a < b
-		}),
-		asks: rbmap.NewMap[Price, Orders](func(a, b Price) bool {
-			return a > b
-		}),
+		bids:   rbmap.NewMap[Price, Orders](rbmap.Ascending[Price]),
+		asks:   rbmap.NewMap[Price, Orders](rbmap.Descending[Price]),
 		orders: make(map[OrderId]OrderEntry),
 	}
 }
@@ -236,5 +232,7 @@ func (o *Orderbook) CanMatch(
 	}
 }
 
-//
-//
+func (o *Orderbook) Match() Trades {
+	var trades Trades
+	return trades
+}
