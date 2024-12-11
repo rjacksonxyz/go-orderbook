@@ -2,7 +2,9 @@ package orderbook
 
 import (
 	"fmt"
+	"go-orderbook/pkg/ds/list"
 	"go-orderbook/pkg/ds/rbmap"
+	"go-orderbook/pkg/util"
 )
 
 type OrderType int
@@ -117,7 +119,9 @@ func (o *Order) Fill(quantity Quantity) error {
 	return nil
 }
 
-type Orders []Order
+type Orders struct {
+	list.LinkedList[Order]
+}
 
 type OrderModify struct {
 	orderId  OrderId
@@ -242,7 +246,7 @@ func (o *Orderbook) Match() Trades {
 			break
 		}
 
-		// retrieve the best bid and ask
+		// retrieve the best bid and ask price
 		bidIt := o.bids.Begin()
 		bidPrice, bids := bidIt.Key(), bidIt.Value()
 
@@ -253,13 +257,17 @@ func (o *Orderbook) Match() Trades {
 			break
 		}
 
-		for len(bids) > 0 && len(asks) > 0 {
-			// TODO: Implement an iterator for orders, since usign a linked list
-			// will be more efficient than using a slice.
+		for bids.Size() > 0 && asks.Size() > 0 {
+			// retrieve the first bid and ask (time priority)
+			bid, _ := bids.Head()
+			ask, _ := asks.Head()
 
-			// TODO: Determine if a statically sized array is better leveraged
-			// than a linked list in this case.
-
+			quantity := util.Min(
+				bid.remainingQuantity,
+				ask.remainingQuantity,
+			)
+			bid.Fill(quantity)
+			ask.Fill(quantity)
 			// TODO: Implement the rest of the match logic
 		}
 
