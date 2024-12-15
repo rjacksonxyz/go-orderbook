@@ -108,6 +108,10 @@ func (o *Order) FilledQuantity() Quantity {
 	return o.intialQuantity - o.remainingQuantity
 }
 
+func (o *Order) IsFilled() bool {
+	return o.remainingQuantity == 0
+}
+
 func (o *Order) Fill(quantity Quantity) error {
 	if quantity > o.remainingQuantity {
 		return fmt.Errorf(
@@ -195,7 +199,7 @@ func (t *Trade) New(
 type Trades []Trade
 
 type OrderEntry struct {
-	order    *Order
+	order    Order
 	location int
 }
 
@@ -236,7 +240,7 @@ func (o *Orderbook) CanMatch(
 	}
 }
 
-func (o *Orderbook) Match() Trades {
+func (o *Orderbook) MatchOrders() (Trades, error) {
 	var trades Trades
 
 	for {
@@ -246,7 +250,8 @@ func (o *Orderbook) Match() Trades {
 			break
 		}
 
-		// retrieve the best bid and ask price
+		// retrieve the best bid and ask prices, along with the
+		// corresponding orders
 		bidIt := o.bids.Begin()
 		bidPrice, bids := bidIt.Key(), bidIt.Value()
 
@@ -257,20 +262,111 @@ func (o *Orderbook) Match() Trades {
 			break
 		}
 
+		// While there are bids and asks, match them
 		for bids.Size() > 0 && asks.Size() > 0 {
 			// retrieve the first bid and ask (time priority)
 			bid, _ := bids.Head()
 			ask, _ := asks.Head()
 
+			// determine the quantity to match
 			quantity := util.Min(
 				bid.remainingQuantity,
 				ask.remainingQuantity,
 			)
-			bid.Fill(quantity)
-			ask.Fill(quantity)
-			// TODO: Implement the rest of the match logic
-		}
 
+			// fill the orders
+			err := bid.Fill(quantity)
+			if err != nil {
+				return trades, err
+			}
+			err = ask.Fill(quantity)
+			if err != nil {
+				return trades, err
+			}
+
+			if bid.IsFilled() {
+				bids.DeleteHead()
+				delete(o.orders, bid.OrderId())
+			}
+
+			if ask.IsFilled() {
+				asks.DeleteHead()
+				delete(o.orders, ask.OrderId())
+			}
+
+			if bids.IsEmpty() {
+				o.bids.Delete(bidPrice)
+			}
+
+			if asks.IsEmpty() {
+				o.asks.Delete(askPrice)
+			}
+
+			// append the trade to the list of trades
+			trades = append(trades,
+				Trade{
+					bidTrade: TradeInfo{
+						orderId:  bid.OrderId(),
+						price:    bid.Price(),
+						quantity: quantity,
+					},
+					askTrade: TradeInfo{
+						orderId:  ask.OrderId(),
+						price:    ask.Price(),
+						quantity: quantity,
+					},
+				},
+			)
+
+			// handle FillAndKill orders
+			if !bids.IsEmpty() {
+				bid, _ = bids.Head()
+				if bid.OrderType() == FillAndKill {
+					bids.DeleteHead()
+					delete(o.orders, bid.OrderId())
+				}
+			}
+
+			if !asks.IsEmpty() {
+				ask, _ = asks.Head()
+				if ask.OrderType() == FillAndKill {
+					asks.DeleteHead()
+					delete(o.orders, ask.OrderId())
+				}
+			}
+		}
 	}
-	return trades
+	return trades, nil
+}
+
+func (o *Orderbook) Add(order Order) (Trades, error) {
+	if _, exists := o.orders[order.OrderId()]; exists {
+	}
+
+	if order.OrderType() == FillAndKill &&
+		!o.CanMatch(order.Side(), order.Price()) {
+	}
+
+	var orders Orders
+
+	// TODO: Refactor this code create zero values by deafult
+	// check if price level exists and create if not, inserting the order.
+	// store the Orders for the appropriate side in `orders`
+	if order.Side() == Buy {
+		if _, exists := o.bids.Get(order.Price()); !exists {
+			o.bids.Insert(order.Price(), orders)
+		}
+		orders, _ = o.bids.Get(order.Price())
+	} else {
+		if _, exists := o.asks.Get(order.Price()); !exists {
+			o.asks.Insert(order.Price(), orders)
+		}
+		orders, _ = o.asks.Get(order.Price())
+	}
+
+	o.orders[order.OrderId()] = OrderEntry{
+		order:    order,
+		location: orders.Size() - 1,
+	}
+	return o.MatchOrders()
 }
