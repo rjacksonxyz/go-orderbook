@@ -164,8 +164,8 @@ func (o *OrderModify) Quantity() Quantity {
 	return o.quantity
 }
 
-func (o *OrderModify) ToOrder(orderType OrderType) *Order {
-	return &Order{
+func (o *OrderModify) ToOrder(orderType OrderType) Order {
+	return Order{
 		orderType:         orderType,
 		orderId:           o.orderId,
 		side:              o.side,
@@ -339,7 +339,7 @@ func (o *Orderbook) MatchOrders() (Trades, error) {
 	return trades, nil
 }
 
-func (o *Orderbook) Add(order Order) (Trades, error) {
+func (o *Orderbook) AddOrder(order Order) (Trades, error) {
 	if _, exists := o.orders[order.OrderId()]; exists {
 	}
 
@@ -369,4 +369,82 @@ func (o *Orderbook) Add(order Order) (Trades, error) {
 		location: orders.Size() - 1,
 	}
 	return o.MatchOrders()
+}
+
+func (o *Orderbook) CancelOrder(orderId OrderId) error {
+	if _, exists := o.orders[orderId]; !exists {
+		return fmt.Errorf("Order %d does not exist", orderId)
+	}
+
+	entry := o.orders[orderId]
+	order := entry.order
+	location := entry.location
+	delete(o.orders, orderId)
+
+	if order.Side() == Buy {
+		orders, _ := o.bids.Get(order.Price())
+		orders.RemoveAt(location)
+		if orders.IsEmpty() {
+			o.bids.Delete(order.Price())
+		}
+	} else {
+		orders, _ := o.asks.Get(order.Price())
+		orders.RemoveAt(location)
+		if orders.IsEmpty() {
+			o.asks.Delete(order.Price())
+		}
+	}
+	return nil
+}
+
+func (o *Orderbook) ModifyOrder(modify OrderModify) (Trades, error) {
+	if _, exists := o.orders[modify.OrderId()]; !exists {
+		return nil, fmt.Errorf("Order %d does not exist", modify.OrderId())
+	}
+
+	existingOrder := o.orders[modify.OrderId()].order
+	o.CancelOrder(modify.OrderId())
+	return o.AddOrder(modify.ToOrder(existingOrder.OrderType()))
+}
+
+func (o *Orderbook) Size() int {
+	return len(o.orders)
+}
+
+// TODO: Test this method
+func (o *Orderbook) OrderInfo() OrderbookLevelsInfo {
+	var (
+		bidsInfo LevelsInfo
+		asksInfo LevelsInfo
+	)
+	for bids := o.bids.Begin(); bids.First(); bids.Next() {
+		var l LevelInfo
+		var q Quantity
+		l.Price = bids.Key()
+		orders := bids.Value()
+		it := orders.Iterator()
+		for order, ok := it.Next(); ok; order, ok = it.Next() {
+			q += order.remainingQuantity
+		}
+		l.Quantity = q
+		bidsInfo = append(bidsInfo, l)
+	}
+
+	for asks := o.asks.Begin(); asks.First(); asks.Next() {
+		var l LevelInfo
+		var q Quantity
+		l.Price = asks.Key()
+		orders := asks.Value()
+		it := orders.Iterator()
+		for order, ok := it.Next(); ok; order, ok = it.Next() {
+			q += order.remainingQuantity
+		}
+		l.Quantity = q
+		asksInfo = append(asksInfo, l)
+	}
+
+	return OrderbookLevelsInfo{
+		bids: bidsInfo,
+		asks: asksInfo,
+	}
 }

@@ -23,6 +23,7 @@ func NewLinkedList[T any]() *LinkedList[T] {
 	}
 }
 
+// [Rest of your existing LinkedList implementation remains the same...]
 // Head returns the value of the first element in the list
 func (l *LinkedList[T]) Head() (T, bool) {
 	var zero T
@@ -202,4 +203,48 @@ func (l *LinkedList[T]) ToSlice() []T {
 // IsEmpty returns true if the list is empty
 func (l *LinkedList[T]) IsEmpty() bool {
 	return l.size == 0
+}
+
+// Iterator represents an iterator over the linked list
+type Iterator[T any] struct {
+	current *node[T]
+}
+
+// Next advances the iterator and returns the next value.
+// The second return value is false if there are no more values.
+func (it *Iterator[T]) Next() (T, bool) {
+	var zero T
+	if it.current == nil {
+		return zero, false
+	}
+	value := it.current.value
+	it.current = it.current.next
+	return value, true
+}
+
+// Iterator returns a new iterator positioned at the start of the list
+func (l *LinkedList[T]) Iterator() *Iterator[T] {
+	return &Iterator[T]{current: l.head}
+}
+
+// Range implements an iterator that works with the range clause
+func (l *LinkedList[T]) Range() *LinkedList[T] {
+	copy := &LinkedList[T]{
+		head: l.head,
+		tail: l.tail,
+		size: l.size,
+	}
+	return copy
+}
+
+// Next implements the iterator interface for range
+func (l *LinkedList[T]) Next() bool {
+	return l.head != nil
+}
+
+// Value implements the iterator interface for range
+func (l *LinkedList[T]) Value() T {
+	value := l.head.value
+	l.head = l.head.next
+	return value
 }
