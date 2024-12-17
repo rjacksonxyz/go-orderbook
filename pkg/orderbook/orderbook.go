@@ -5,13 +5,17 @@ import (
 	"go-orderbook/pkg/ds/list"
 	"go-orderbook/pkg/ds/rbmap"
 	"go-orderbook/pkg/util"
+	"sync"
 )
 
 type OrderType int
 
 const (
-	GoodTillCancel OrderType = iota
+	Market OrderType = iota
+	GoodTillCancel
+	GoodForDay
 	FillAndKill
+	FillOrKill
 )
 
 type Side int
@@ -82,6 +86,14 @@ func NewOrder(
 		initialQuantity:   quantity,
 		remainingQuantity: quantity,
 	}
+}
+
+func NewMarketOrder(
+	orderId OrderId,
+	side Side,
+	quantity Quantity,
+) Order {
+	return NewOrder(Market, orderId, side, 0, quantity)
 }
 
 func (o *Order) OrderId() OrderId {
@@ -204,6 +216,7 @@ type OrderEntry struct {
 }
 
 type Orderbook struct {
+	m      *sync.Mutex
 	bids   *rbmap.Map[Price, Orders]
 	asks   *rbmap.Map[Price, Orders]
 	orders map[OrderId]OrderEntry
@@ -211,6 +224,7 @@ type Orderbook struct {
 
 func NewOrderbook() Orderbook {
 	return Orderbook{
+		m:      &sync.Mutex{},
 		bids:   rbmap.NewMap[Price, Orders](rbmap.Ascending[Price]),
 		asks:   rbmap.NewMap[Price, Orders](rbmap.Descending[Price]),
 		orders: make(map[OrderId]OrderEntry),
@@ -341,15 +355,19 @@ func (o *Orderbook) MatchOrders() (Trades, error) {
 
 func (o *Orderbook) AddOrder(order Order) (Trades, error) {
 	if _, exists := o.orders[order.OrderId()]; exists {
+		return nil, fmt.Errorf("Order %d already exists", order.OrderId())
 	}
 
 	if order.OrderType() == FillAndKill &&
 		!o.CanMatch(order.Side(), order.Price()) {
+		return nil, fmt.Errorf(
+			"Order %d cannot be filled immediately", order.OrderId(),
+		)
 	}
 
 	var orders Orders
 
-	// TODO: Refactor this code create zero values by deafult
+	// TODO: Refactor this code create zero values by default
 	// check if price level exists and create if not, inserting the order.
 	// store the Orders for the appropriate side in `orders`
 	if order.Side() == Buy {
