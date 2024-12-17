@@ -67,7 +67,7 @@ type Order struct {
 	remainingQuantity Quantity
 }
 
-func (o *Order) New(
+func NewOrder(
 	orderType OrderType,
 	orderId OrderId,
 	side Side,
