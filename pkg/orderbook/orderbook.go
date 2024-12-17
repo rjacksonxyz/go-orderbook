@@ -63,7 +63,7 @@ type Order struct {
 	orderId           OrderId
 	side              Side
 	price             Price
-	intialQuantity    Quantity
+	initialQuantity   Quantity
 	remainingQuantity Quantity
 }
 
@@ -79,7 +79,7 @@ func (o *Order) New(
 		orderId:           orderId,
 		side:              side,
 		price:             price,
-		intialQuantity:    quantity,
+		initialQuantity:   quantity,
 		remainingQuantity: quantity,
 	}
 }
@@ -101,11 +101,11 @@ func (o *Order) Price() Price {
 }
 
 func (o *Order) InitialQuantity() Quantity {
-	return o.intialQuantity
+	return o.initialQuantity
 }
 
 func (o *Order) FilledQuantity() Quantity {
-	return o.intialQuantity - o.remainingQuantity
+	return o.initialQuantity - o.remainingQuantity
 }
 
 func (o *Order) IsFilled() bool {
@@ -170,7 +170,7 @@ func (o *OrderModify) ToOrder(orderType OrderType) Order {
 		orderId:           o.orderId,
 		side:              o.side,
 		price:             o.price,
-		intialQuantity:    o.quantity,
+		initialQuantity:   o.quantity,
 		remainingQuantity: o.quantity,
 	}
 }
@@ -209,7 +209,7 @@ type Orderbook struct {
 	orders map[OrderId]OrderEntry
 }
 
-func (o *Orderbook) New() Orderbook {
+func NewOrderbook() Orderbook {
 	return Orderbook{
 		bids:   rbmap.NewMap[Price, Orders](rbmap.Ascending[Price]),
 		asks:   rbmap.NewMap[Price, Orders](rbmap.Descending[Price]),
