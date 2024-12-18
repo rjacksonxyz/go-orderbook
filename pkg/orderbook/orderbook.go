@@ -429,7 +429,6 @@ func (o *Orderbook) Size() int {
 	return len(o.orders)
 }
 
-// TODO: Test this method
 func (o *Orderbook) OrderInfo() OrderbookLevelsInfo {
 	var (
 		bidsInfo LevelsInfo
