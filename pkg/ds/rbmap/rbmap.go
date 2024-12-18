@@ -360,6 +360,22 @@ func (m *Map[K, V]) First() (K, V, bool) {
 	return current.Key, current.Value, true
 }
 
+// First returns the last (largest) key-value pair in the map
+func (m *Map[K, V]) Last() (K, V, bool) {
+	if m.root == nil {
+		var zeroK K
+		var zeroV V
+		return zeroK, zeroV, false
+	}
+
+	// Find the leftmost node (smallest key)
+	current := m.root
+	for current.right != nil {
+		current = current.right
+	}
+	return current.Key, current.Value, true
+}
+
 // Size returns the number of elements in the map
 func (m *Map[K, V]) Size() int {
 	return m.size

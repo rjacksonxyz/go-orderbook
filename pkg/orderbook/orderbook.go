@@ -135,6 +135,18 @@ func (o *Order) Fill(quantity Quantity) error {
 	return nil
 }
 
+func (o *Order) ToGoodTillCancel(price Price) error {
+	if o.OrderType() != Market {
+		return fmt.Errorf(
+			"Order %d cannot be converted to GoodTillCancel, must be Market",
+			o.OrderId(),
+		)
+	}
+	o.price = price
+	o.orderType = GoodTillCancel
+	return nil
+}
+
 type Orders struct {
 	list.LinkedList[Order]
 }
@@ -254,6 +266,9 @@ func (o *Orderbook) CanMatch(
 	}
 }
 
+// MatchOrders checks the bid and asks maps and attempt to
+// generate Trades from their stored Orders. If a bid is available at
+// a price greater than or equal to that of the best ask, a trade is generated.
 func (o *Orderbook) MatchOrders() (Trades, error) {
 	var trades Trades
 
@@ -354,8 +369,31 @@ func (o *Orderbook) MatchOrders() (Trades, error) {
 }
 
 func (o *Orderbook) AddOrder(order Order) (Trades, error) {
+	o.m.Lock()
+
 	if _, exists := o.orders[order.OrderId()]; exists {
 		return nil, fmt.Errorf("Order %d already exists", order.OrderId())
+	}
+
+	// Market orders are converted to GoodTillCancel with the max/worst price
+	// available in the asks, ensuring execution with the best asks price once
+	// `MatchOrders` is called
+
+	if order.OrderType() == Market {
+		var err error
+		if order.Side() == Buy && !o.asks.Empty() {
+			maxPrice, _, _ := o.asks.Last()
+			err = order.ToGoodTillCancel(maxPrice)
+		} else if order.Side() == Sell && !o.bids.Empty() {
+			maxPrice, _, _ := o.bids.Last()
+			err = order.ToGoodTillCancel(maxPrice)
+		} else {
+			// TODO: Improve this message
+			return nil, fmt.Errorf("invalid state")
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if order.OrderType() == FillAndKill &&
