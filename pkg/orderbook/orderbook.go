@@ -6,6 +6,8 @@ import (
 	"go-orderbook/pkg/ds/rbmap"
 	"go-orderbook/pkg/util"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type OrderType int
@@ -29,6 +31,7 @@ type (
 	Price    int32
 	Quantity uint32
 	OrderId  uint64
+	OrderIds []OrderId
 )
 
 type LevelInfo struct {
@@ -228,10 +231,12 @@ type OrderEntry struct {
 }
 
 type Orderbook struct {
-	m      *sync.Mutex
-	bids   *rbmap.Map[Price, Orders]
-	asks   *rbmap.Map[Price, Orders]
-	orders map[OrderId]OrderEntry
+	m        *sync.Mutex
+	bids     *rbmap.Map[Price, Orders]
+	asks     *rbmap.Map[Price, Orders]
+	orders   map[OrderId]OrderEntry
+	shutdown atomic.Bool
+	cond     *sync.Cond
 }
 
 func NewOrderbook() Orderbook {
@@ -370,6 +375,7 @@ func (o *Orderbook) MatchOrders() (Trades, error) {
 
 func (o *Orderbook) AddOrder(order Order) (Trades, error) {
 	o.m.Lock()
+	defer o.m.Unlock()
 
 	if _, exists := o.orders[order.OrderId()]; exists {
 		return nil, fmt.Errorf("Order %d already exists", order.OrderId())
@@ -461,6 +467,71 @@ func (o *Orderbook) ModifyOrder(modify OrderModify) (Trades, error) {
 	existingOrder := o.orders[modify.OrderId()].order
 	o.CancelOrder(modify.OrderId())
 	return o.AddOrder(modify.ToOrder(existingOrder.OrderType()))
+}
+
+// PruneGoodForDayOrders removes all GoodForDay orders from the orderbook at 4pm
+// EST. This is a naive implementation and should be improved.
+func (o *Orderbook) PruneGoodForDayOrders() error {
+	endHour := 16 // 16:00 / 04:00 PM
+
+	for {
+		// get current time and convert to local time
+		now := time.Now()
+		location, err := time.LoadLocation("America/New_York")
+		if err != nil {
+			return fmt.Errorf("error loading location: %v", err)
+		}
+		next := now.In(location)
+
+		if next.Hour() >= endHour {
+			next = next.AddDate(0, 0, 1)
+		}
+		next = time.Date(
+			next.Year(),
+			next.Month(),
+			next.Day(),
+			endHour,
+			0,
+			0,
+			0,
+			next.Location(),
+		)
+
+		until := next.Sub(now) + (100 * time.Millisecond)
+		if o.shutdown.Load() {
+			return nil
+		}
+
+		go func() {
+			o.cond.L.Lock()
+			defer o.cond.L.Unlock()
+
+			time.Sleep(until)
+			o.cond.Signal()
+		}()
+
+		o.cond.Wait()
+
+		var orderIds OrderIds
+		{
+			o.m.Lock()
+			defer o.m.Unlock()
+
+			for id, entry := range o.orders {
+				if entry.order.OrderType() == GoodForDay {
+					orderIds = append(orderIds, id)
+				}
+			}
+		}
+
+		{
+			o.m.Lock()
+			defer o.m.Unlock()
+			for _, id := range orderIds {
+				o.CancelOrder(id)
+			}
+		}
+	}
 }
 
 func (o *Orderbook) Size() int {
