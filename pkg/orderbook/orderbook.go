@@ -2,233 +2,12 @@ package orderbook
 
 import (
 	"fmt"
-	"go-orderbook/pkg/ds/list"
 	"go-orderbook/pkg/ds/rbmap"
 	"go-orderbook/pkg/util"
 	"sync"
 	"sync/atomic"
 	"time"
 )
-
-type OrderType int
-
-const (
-	Market OrderType = iota
-	GoodTillCancel
-	GoodForDay
-	FillAndKill
-	FillOrKill
-)
-
-type Side int
-
-const (
-	Buy Side = iota
-	Sell
-)
-
-type (
-	Price    int32
-	Quantity uint32
-	OrderId  uint64
-	OrderIds []OrderId
-)
-
-type LevelInfo struct {
-	Price    Price
-	Quantity Quantity
-}
-
-type LevelsInfo []LevelInfo
-
-// OrderbookLevelsInfo stores state of the bids and asks for given levels in the
-// order book.
-type OrderbookLevelsInfo struct {
-	bids LevelsInfo
-	asks LevelsInfo
-}
-
-func (o *OrderbookLevelsInfo) New(
-	bids, asks LevelsInfo,
-) OrderbookLevelsInfo {
-	return OrderbookLevelsInfo{
-		bids: bids,
-		asks: asks,
-	}
-}
-
-func (o *OrderbookLevelsInfo) GetBids() LevelsInfo {
-	return o.bids
-}
-
-func (o *OrderbookLevelsInfo) GetAsks() LevelsInfo {
-	return o.asks
-}
-
-type Order struct {
-	orderType         OrderType
-	orderId           OrderId
-	side              Side
-	price             Price
-	initialQuantity   Quantity
-	remainingQuantity Quantity
-}
-
-func NewOrder(
-	orderType OrderType,
-	orderId OrderId,
-	side Side,
-	price Price,
-	quantity Quantity,
-) Order {
-	return Order{
-		orderType:         orderType,
-		orderId:           orderId,
-		side:              side,
-		price:             price,
-		initialQuantity:   quantity,
-		remainingQuantity: quantity,
-	}
-}
-
-func NewMarketOrder(
-	orderId OrderId,
-	side Side,
-	quantity Quantity,
-) Order {
-	return NewOrder(Market, orderId, side, 0, quantity)
-}
-
-func (o *Order) OrderId() OrderId {
-	return o.orderId
-}
-
-func (o *Order) OrderType() OrderType {
-	return o.orderType
-}
-
-func (o *Order) Side() Side {
-	return o.side
-}
-
-func (o *Order) Price() Price {
-	return o.price
-}
-
-func (o *Order) InitialQuantity() Quantity {
-	return o.initialQuantity
-}
-
-func (o *Order) FilledQuantity() Quantity {
-	return o.initialQuantity - o.remainingQuantity
-}
-
-func (o *Order) IsFilled() bool {
-	return o.remainingQuantity == 0
-}
-
-func (o *Order) Fill(quantity Quantity) error {
-	if quantity > o.remainingQuantity {
-		return fmt.Errorf(
-			"Order %d cannot be filled for more than it's remaining quantity",
-			o.orderId,
-		)
-	}
-	o.remainingQuantity -= quantity
-	return nil
-}
-
-func (o *Order) ToGoodTillCancel(price Price) error {
-	if o.OrderType() != Market {
-		return fmt.Errorf(
-			"Order %d cannot be converted to GoodTillCancel, must be Market",
-			o.OrderId(),
-		)
-	}
-	o.price = price
-	o.orderType = GoodTillCancel
-	return nil
-}
-
-type Orders struct {
-	list.LinkedList[Order]
-}
-
-type OrderModify struct {
-	orderId  OrderId
-	side     Side
-	price    Price
-	quantity Quantity
-}
-
-func (o *OrderModify) New(
-	orderId OrderId,
-	price Price,
-	side Side,
-	quantity Quantity,
-) OrderModify {
-	return OrderModify{
-		price:    price,
-		side:     side,
-		orderId:  orderId,
-		quantity: quantity,
-	}
-}
-
-func (o *OrderModify) OrderId() OrderId {
-	return o.orderId
-}
-
-func (o *OrderModify) Side() Side {
-	return o.side
-}
-
-func (o *OrderModify) Price() Price {
-	return o.price
-}
-
-func (o *OrderModify) Quantity() Quantity {
-	return o.quantity
-}
-
-func (o *OrderModify) ToOrder(orderType OrderType) Order {
-	return Order{
-		orderType:         orderType,
-		orderId:           o.orderId,
-		side:              o.side,
-		price:             o.price,
-		initialQuantity:   o.quantity,
-		remainingQuantity: o.quantity,
-	}
-}
-
-type TradeInfo struct {
-	orderId  OrderId
-	price    Price
-	quantity Quantity
-}
-
-// A Trade represents a matching bid and ask.
-type Trade struct {
-	bidTrade TradeInfo
-	askTrade TradeInfo
-}
-
-func (t *Trade) New(
-	bidTrade, askTrade TradeInfo,
-) Trade {
-	return Trade{
-		bidTrade: bidTrade,
-		askTrade: askTrade,
-	}
-}
-
-type Trades []Trade
-
-type OrderEntry struct {
-	order    Order
-	location int
-}
 
 type Orderbook struct {
 	m        *sync.Mutex
@@ -246,6 +25,20 @@ func NewOrderbook() Orderbook {
 		asks:   rbmap.NewMap[Price, Orders](rbmap.Descending[Price]),
 		orders: make(map[OrderId]OrderEntry),
 	}
+}
+
+func (o *Orderbook) Start() {
+	o.cond = sync.NewCond(&sync.Mutex{})
+	go o.PruneGoodForDayOrders()
+}
+
+func (o *Orderbook) Shutdown() {
+	o.shutdown.Store(true)
+	o.cond.Signal()
+}
+
+func (o *Orderbook) Size() int {
+	return len(o.orders)
 }
 
 // CanMatch checks if a given order can be matched at a given price.
@@ -269,6 +62,19 @@ func (o *Orderbook) CanMatch(
 		bestBid := bids.Key()
 		return price <= bestBid
 	}
+}
+
+// TODO: Finish this function
+func (o *Orderbook) CanFullyFill(
+	side Side,
+	price Price,
+	quantity Quantity,
+) bool {
+	if !o.CanMatch(side, price) {
+		return false
+	}
+	var _ Price
+	return false
 }
 
 // MatchOrders checks the bid and asks maps and attempt to
@@ -378,7 +184,10 @@ func (o *Orderbook) AddOrder(order Order) (Trades, error) {
 	defer o.m.Unlock()
 
 	if _, exists := o.orders[order.OrderId()]; exists {
-		return nil, fmt.Errorf("Order %d already exists", order.OrderId())
+		return nil, fmt.Errorf(
+			"Order %d already exists",
+			order.OrderId(),
+		)
 	}
 
 	// Market orders are converted to GoodTillCancel with the max/worst price
@@ -405,8 +214,12 @@ func (o *Orderbook) AddOrder(order Order) (Trades, error) {
 	if order.OrderType() == FillAndKill &&
 		!o.CanMatch(order.Side(), order.Price()) {
 		return nil, fmt.Errorf(
-			"Order %d cannot be filled immediately", order.OrderId(),
+			"Order %d cannot be filled immediately",
+			order.OrderId(),
 		)
+	}
+
+	if order.OrderType() == FillOrKill {
 	}
 
 	var orders Orders
@@ -434,6 +247,23 @@ func (o *Orderbook) AddOrder(order Order) (Trades, error) {
 }
 
 func (o *Orderbook) CancelOrder(orderId OrderId) error {
+	o.m.Lock()
+	defer o.m.Unlock()
+	return o.cancelOrder(orderId)
+}
+
+func (o *Orderbook) CancelOrders(orderIds OrderIds) error {
+	o.m.Lock()
+	defer o.m.Unlock()
+	for _, id := range orderIds {
+		if err := o.cancelOrder(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (o *Orderbook) cancelOrder(orderId OrderId) error {
 	if _, exists := o.orders[orderId]; !exists {
 		return fmt.Errorf("Order %d does not exist", orderId)
 	}
@@ -502,6 +332,9 @@ func (o *Orderbook) PruneGoodForDayOrders() error {
 			return nil
 		}
 
+		// TODO: update this func to use a channel
+		// to trigger cond.Singal() separately from
+		// the timer.
 		go func() {
 			o.cond.L.Lock()
 			defer o.cond.L.Unlock()
@@ -523,19 +356,10 @@ func (o *Orderbook) PruneGoodForDayOrders() error {
 				}
 			}
 		}
-
-		{
-			o.m.Lock()
-			defer o.m.Unlock()
-			for _, id := range orderIds {
-				o.CancelOrder(id)
-			}
+		if err := o.CancelOrders(orderIds); err != nil {
+			return fmt.Errorf("error cancelling orders: %v", err)
 		}
 	}
-}
-
-func (o *Orderbook) Size() int {
-	return len(o.orders)
 }
 
 func (o *Orderbook) OrderInfo() OrderbookLevelsInfo {
@@ -543,7 +367,7 @@ func (o *Orderbook) OrderInfo() OrderbookLevelsInfo {
 		bidsInfo LevelsInfo
 		asksInfo LevelsInfo
 	)
-	for bids := o.bids.Begin(); bids.First(); bids.Next() {
+	for bids := o.bids.Begin(); bids.Valid(); bids.Next() {
 		var l LevelInfo
 		var q Quantity
 		l.Price = bids.Key()
@@ -556,7 +380,7 @@ func (o *Orderbook) OrderInfo() OrderbookLevelsInfo {
 		bidsInfo = append(bidsInfo, l)
 	}
 
-	for asks := o.asks.Begin(); asks.First(); asks.Next() {
+	for asks := o.asks.Begin(); asks.Valid(); asks.Next() {
 		var l LevelInfo
 		var q Quantity
 		l.Price = asks.Key()

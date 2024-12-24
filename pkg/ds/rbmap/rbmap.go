@@ -442,7 +442,7 @@ func (m *Map[K, V]) Begin() Iterator[K, V] {
 	return Iterator[K, V]{current}
 }
 
-// First returns true if the iterator is valid and points to the first element
-func (it *Iterator[K, V]) First() bool {
+// Valid returns true if the iterator is valid and points to the first element
+func (it *Iterator[K, V]) Valid() bool {
 	return it.current != nil
 }
