@@ -31,11 +31,6 @@ type Order struct {
 	remainingQuantity Quantity
 }
 
-type OrderEntry struct {
-	order    Order
-	location int
-}
-
 func NewOrder(
 	orderType OrderType,
 	orderId OrderId,

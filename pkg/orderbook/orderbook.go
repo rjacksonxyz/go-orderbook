@@ -14,8 +14,19 @@ type Orderbook struct {
 	bids     *rbmap.Map[Price, Orders]
 	asks     *rbmap.Map[Price, Orders]
 	orders   map[OrderId]OrderEntry
+	levels   map[Price]LevelData
 	shutdown atomic.Bool
 	cond     *sync.Cond
+}
+
+type OrderEntry struct {
+	order    Order
+	location int
+}
+
+type LevelData struct {
+	quantity Quantity
+	count    Quantity
 }
 
 func NewOrderbook() Orderbook {
@@ -73,7 +84,31 @@ func (o *Orderbook) CanFullyFill(
 	if !o.CanMatch(side, price) {
 		return false
 	}
-	var _ Price
+	var threshold Price
+	if side == Buy {
+		askIt := o.asks.Begin()
+		askPrice := askIt.Key()
+		threshold = askPrice
+	} else {
+		bidIt := o.bids.Begin()
+		bidPrice := bidIt.Key()
+		threshold = bidPrice
+	}
+
+	for priceLevel, levelData := range o.levels {
+		if side == Buy && priceLevel > threshold ||
+			side == Sell && priceLevel < threshold {
+			continue
+		}
+		if side == Buy && priceLevel > price ||
+			side == Sell && priceLevel < price {
+			continue
+		}
+		if levelData.quantity >= quantity {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -84,7 +119,6 @@ func (o *Orderbook) MatchOrders() (Trades, error) {
 	var trades Trades
 
 	for {
-
 		// check for empty bids or asks
 		if o.bids.Empty() || o.asks.Empty() {
 			break

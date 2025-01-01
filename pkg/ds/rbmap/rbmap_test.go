@@ -24,7 +24,7 @@ func TestMap(t *testing.T) {
 
 	// Iterate through the map in order
 	i := 0
-	for it := intMap.Begin(); it.First(); it.Next() {
+	for it := intMap.Begin(); it.Valid(); it.Next() {
 		assert.Equal(t, it.Key(), int(expecetdOrder[i]))
 		i++
 	}
