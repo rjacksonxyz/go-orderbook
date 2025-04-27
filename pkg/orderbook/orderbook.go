@@ -6,7 +6,6 @@ import (
 	"go-orderbook/pkg/util"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 type Orderbook struct {
@@ -40,7 +39,7 @@ func NewOrderbook() Orderbook {
 
 func (o *Orderbook) Start() {
 	o.cond = sync.NewCond(&sync.Mutex{})
-	go o.PruneGoodForDayOrders()
+	//go o.PruneGoodForDayOrders()
 }
 
 func (o *Orderbook) Shutdown() {
@@ -116,6 +115,12 @@ func (o *Orderbook) CanFullyFill(
 // generate Trades from their stored Orders. If a bid is available at
 // a price greater than or equal to that of the best ask, a trade is generated.
 func (o *Orderbook) MatchOrders() (Trades, error) {
+	return o.matchOrdersNoLock()
+}
+
+// matchOrdersNoLock is an internal helper that performs matching without acquiring the lock
+// It should only be called by methods that have already acquired the lock
+func (o *Orderbook) matchOrdersNoLock() (Trades, error) {
 	var trades Trades
 
 	for {
@@ -277,7 +282,9 @@ func (o *Orderbook) AddOrder(order Order) (Trades, error) {
 		order:    order,
 		location: orders.Size() - 1,
 	}
-	return o.MatchOrders()
+	// Call the no-lock version since we already have the lock
+	o.matchOrdersNoLock()
+	return nil, nil
 }
 
 func (o *Orderbook) CancelOrder(orderId OrderId) error {
@@ -335,68 +342,71 @@ func (o *Orderbook) ModifyOrder(modify OrderModify) (Trades, error) {
 
 // PruneGoodForDayOrders removes all GoodForDay orders from the orderbook at 4pm
 // EST. This is a naive implementation and should be improved.
-func (o *Orderbook) PruneGoodForDayOrders() error {
-	endHour := 16 // 16:00 / 04:00 PM
+// func (o *Orderbook) PruneGoodForDayOrders() error {
+// 	endHour := 16 // 16:00 / 04:00 PM
 
-	for {
-		// get current time and convert to local time
-		now := time.Now()
-		location, err := time.LoadLocation("America/New_York")
-		if err != nil {
-			return fmt.Errorf("error loading location: %v", err)
-		}
-		next := now.In(location)
+// 	for {
+// 		// get current time and convert to local time
+// 		now := time.Now()
+// 		location, err := time.LoadLocation("America/New_York")
+// 		if err != nil {
+// 			return fmt.Errorf("error loading location: %v", err)
+// 		}
+// 		next := now.In(location)
 
-		if next.Hour() >= endHour {
-			next = next.AddDate(0, 0, 1)
-		}
-		next = time.Date(
-			next.Year(),
-			next.Month(),
-			next.Day(),
-			endHour,
-			0,
-			0,
-			0,
-			next.Location(),
-		)
+// 		if next.Hour() >= endHour {
+// 			next = next.AddDate(0, 0, 1)
+// 		}
+// 		next = time.Date(
+// 			next.Year(),
+// 			next.Month(),
+// 			next.Day(),
+// 			endHour,
+// 			0,
+// 			0,
+// 			0,
+// 			next.Location(),
+// 		)
 
-		until := next.Sub(now) + (100 * time.Millisecond)
-		if o.shutdown.Load() {
-			return nil
-		}
+// 		until := next.Sub(now) + (100 * time.Millisecond)
+// 		if o.shutdown.Load() {
+// 			return nil
+// 		}
 
-		// TODO: update this func to use a channel
-		// to trigger cond.Singal() separately from
-		// the timer.
-		go func() {
-			o.cond.L.Lock()
-			defer o.cond.L.Unlock()
+// 		// TODO: update this func to use a channel
+// 		// to trigger cond.Singal() separately from
+// 		// the timer.
+// 		go func() {
+// 			o.cond.L.Lock()
+// 			defer o.cond.L.Unlock()
 
-			time.Sleep(until)
-			o.cond.Signal()
-		}()
+// 			time.Sleep(until)
+// 			o.cond.Signal()
+// 		}()
 
-		o.cond.Wait()
+// 		o.cond.Wait()
 
-		var orderIds OrderIds
-		{
-			o.m.Lock()
-			defer o.m.Unlock()
+// 		var orderIds OrderIds
+// 		{
+// 			o.m.Lock()
+// 			defer o.m.Unlock()
 
-			for id, entry := range o.orders {
-				if entry.order.OrderType() == GoodForDay {
-					orderIds = append(orderIds, id)
-				}
-			}
-		}
-		if err := o.CancelOrders(orderIds); err != nil {
-			return fmt.Errorf("error cancelling orders: %v", err)
-		}
-	}
-}
+// 			for id, entry := range o.orders {
+// 				if entry.order.OrderType() == GoodForDay {
+// 					orderIds = append(orderIds, id)
+// 				}
+// 			}
+// 		}
+// 		if err := o.CancelOrders(orderIds); err != nil {
+// 			return fmt.Errorf("error cancelling orders: %v", err)
+// 		}
+// 	}
+// }
 
 func (o *Orderbook) OrderInfo() OrderbookLevelsInfo {
+	o.m.Lock()
+	defer o.m.Unlock()
+
 	var (
 		bidsInfo LevelsInfo
 		asksInfo LevelsInfo
